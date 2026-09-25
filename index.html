@@ -1445,7 +1445,7 @@ pre,code{max-width:100%;overflow:auto;white-space:pre-wrap;overflow-wrap:anywher
 <script>
 const HUNAR_SUPABASE_URL="https://enuqrzaavxadtduyqwqv.supabase.co";
 const HUNAR_SUPABASE_KEY="sb_publishable_XZwFIJv6IajO9kWCe7wvVw_97GIv05D";
-const supabaseClient=window.supabase?.createClient(HUNAR_SUPABASE_URL,HUNAR_SUPABASE_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+const supabaseClient=window.supabase?.createClient(HUNAR_SUPABASE_URL,HUNAR_SUPABASE_KEY,{auth:{persistSession:true,autoRefreshToken:true,flowType:"pkce",detectSessionInUrl:false}});
 window.supabaseClient=supabaseClient;
 let me=null;
 let productionUser=null;
