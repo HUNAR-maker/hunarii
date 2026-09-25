@@ -2,6 +2,20 @@
 <html lang="en">
 <head>
 <meta name="hunar-build" content="HUNAR LIVE FIX 2026-09-26">
+<script>
+(function(){
+  try{
+    var key='hunar_sw_cleanup_20260926';
+    if(sessionStorage.getItem(key)!=='1' && ('serviceWorker' in navigator || 'caches' in window)){
+      sessionStorage.setItem(key,'1');
+      var jobs=[];
+      if('serviceWorker' in navigator) jobs.push(navigator.serviceWorker.getRegistrations().then(function(rs){return Promise.all(rs.map(function(reg){return reg.unregister();}));}).catch(function(){}));
+      if('caches' in window) jobs.push(caches.keys().then(function(keys){return Promise.all(keys.map(function(k){return caches.delete(k);}));}).catch(function(){}));
+      Promise.all(jobs).then(function(){location.reload();}).catch(function(){location.reload();});
+    }
+  }catch(e){}
+})();
+</script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>HUNAR | Ethiopian Freelance Marketplace</title>
