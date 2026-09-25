@@ -1447,6 +1447,66 @@ const HUNAR_SUPABASE_URL="https://enuqrzaavxadtduyqwqv.supabase.co";
 const HUNAR_SUPABASE_KEY="sb_publishable_XZwFIJv6IajO9kWCe7wvVw_97GIv05D";
 const supabaseClient=window.supabase?.createClient(HUNAR_SUPABASE_URL,HUNAR_SUPABASE_KEY,{auth:{persistSession:true,autoRefreshToken:true,flowType:"pkce",detectSessionInUrl:false}});
 window.supabaseClient=supabaseClient;
+if(!window.HunarData){
+  const q=async(table,select='*',filters=[])=>{
+    let x=supabaseClient.from(table).select(select);
+    for(const f of filters){if(f[0]==='eq')x=x.eq(f[1],f[2]);else if(f[0]==='in')x=x.in(f[1],f[2]);}
+    const {data,error}=await x;
+    if(error)throw error;
+    return data||[];
+  };
+  const rpc=async(name,args={})=>{const {data,error}=await supabaseClient.rpc(name,args);if(error)throw error;return data;};
+  const currentId=()=>productionUser?.id||null;
+  window.HunarData={
+    accounts:{
+      me:async()=>{const id=currentId();if(!id)throw new Error('No authenticated user.');const {data,error}=await supabaseClient.from('accounts').select('*').eq('id',id).maybeSingle();if(error)throw error;if(!data)throw new Error('HUNAR account was not found.');return data;},
+      update:async(patch)=>{const id=currentId();const {data,error}=await supabaseClient.from('accounts').update(patch).eq('id',id).select().single();if(error)throw error;return data;}
+    },
+    freelancers:{
+      public:async()=>{const accounts=await q('public_accounts','*',[['eq','role','freelancer']]);const ids=accounts.map(x=>x.id);const profiles=ids.length?await q('freelancer_profiles','*',[['in','account_id',ids]]):[];const services=ids.length?await q('services','*',[['in','freelancer_id',ids]]):[];const portfolios=ids.length?await q('portfolios','*',[['in','freelancer_id',ids]]):[];return {accounts,profiles,services,portfolios};},
+      profile:async(id=currentId())=>{const rows=await q('freelancer_profiles','*',[['eq','account_id',id]]);return rows[0]||null;},
+      updateProfile:async(patch)=>{const {data,error}=await supabaseClient.from('freelancer_profiles').upsert({...patch,account_id:patch.account_id||currentId()}).select().single();if(error)throw error;return data;}
+    },
+    projects:{
+      list:async()=>q('projects'),
+      create:async(payload)=>{const {data,error}=await supabaseClient.from('projects').insert({...payload,client_id:currentId()}).select().single();if(error)throw error;return data;}
+    },
+    services:{
+      mine:async()=>q('services','*',[['eq','freelancer_id',currentId()]]),
+      create:async(payload)=>{const {data,error}=await supabaseClient.from('services').insert({...payload,freelancer_id:currentId()}).select().single();if(error)throw error;return data;},
+      update:async(id,payload)=>{const {data,error}=await supabaseClient.from('services').update(payload).eq('id',id).eq('freelancer_id',currentId()).select().single();if(error)throw error;return data;}
+    },
+    portfolios:{
+      mine:async()=>q('portfolios','*',[['eq','freelancer_id',currentId()]]),
+      create:async(payload)=>{const {data,error}=await supabaseClient.from('portfolios').insert({...payload,freelancer_id:currentId()}).select().single();if(error)throw error;return data;},
+      update:async(id,payload)=>{const {data,error}=await supabaseClient.from('portfolios').update(payload).eq('id',id).eq('freelancer_id',currentId()).select().single();if(error)throw error;return data;}
+    },
+    applications:{
+      mine:async()=>q('applications','*',[['eq','freelancer_id',currentId()]]),
+      forClient:async()=>{const projects=await q('projects','id',[['eq','client_id',currentId()]]);const ids=projects.map(x=>x.id);return ids.length?q('applications','*',[['in','project_id',ids]]):[];},
+      create:async(payload)=>{const {data,error}=await supabaseClient.from('applications').insert({...payload,freelancer_id:currentId()}).select().single();if(error)throw error;return data;}
+    },
+    messaging:{
+      list:async()=>rpc('hunar_list_my_messages'),
+      conversationWith:async(id,projectId=null)=>rpc('hunar_start_conversation',{p_other_user_id:id,p_project_id:projectId}),
+      newConversation:async(id,projectId=null)=>rpc('hunar_start_conversation',{p_other_user_id:id,p_project_id:projectId}),
+      send:async(recipientId,body,projectId=null)=>rpc('hunar_send_message',{p_recipient_id:recipientId,p_body:body,p_project_id:projectId}),
+      sendInConversation:async(conversationId,body)=>rpc('hunar_send_message_in_conversation',{p_conversation_id:conversationId,p_body:body}),
+      attachVoice:async()=>null,
+      voiceUrl:async(path)=>path
+    },
+    notifications:{list:async()=>q('notifications','*',[['eq','account_id',currentId()]]),markRead:async(id)=>{const {data,error}=await supabaseClient.from('notifications').update({read_at:new Date().toISOString()}).eq('id',id).eq('account_id',currentId()).select().single();if(error)throw error;return data;}},
+    verification:{mine:async()=>q('verification_requests','*',[['eq','account_id',currentId()]]),submit:async(payload)=>{const {data,error}=await supabaseClient.from('verification_requests').insert({...payload,account_id:currentId()}).select().single();if(error)throw error;return data;},attachFiles:async()=>null},
+    saved:{list:async()=>q('saved_freelancers','*',[['eq','client_id',currentId()]]),toggle:async(id)=>rpc('hunar_toggle_saved_freelancer',{p_freelancer_id:id})},
+    contracts:{list:async()=>rpc('hunar_list_my_contracts'),create:async(p)=>rpc('hunar_create_contract',p),createDirect:async(p)=>rpc('hunar_create_direct_contract',p),fundContract:async(id)=>rpc('hunar_prepare_contract_payment',{p_contract_id:id}),accept:async(id)=>rpc('hunar_accept_contract',{p_contract_id:id})},
+    wallet:{summary:async()=>rpc('hunar_wallet_summary',{p_user_id:currentId()}),transactions:async(limit=100,offset=0)=>rpc('hunar_list_wallet_transactions',{p_limit:limit,p_offset:offset}),withdrawals:async(limit=100,offset=0)=>rpc('hunar_list_my_withdrawals',{p_limit:limit,p_offset:offset}),clientPayments:async(limit=100,offset=0)=>rpc('hunar_list_my_client_payments',{p_limit:limit,p_offset:offset}),requestWithdrawal:async(p)=>rpc('hunar_create_withdrawal_reservation',p),verifyContractPayment:async()=>({verified:false})},
+    onboarding:{freelancer:async(p)=>rpc('complete_freelancer_onboarding',{p_account_id:currentId(),payload:p})},
+    reviews:{create:async(p)=>p},
+    hireFreelancer:async(id)=>rpc('hunar_hire_freelancer',{p_application_id:id}),
+    realtime:{subscribe:()=>null,unsubscribe:()=>null},
+    storage:{upload:async()=>null}
+  };
+}
 let me=null;
 let productionUser=null;
 let signupRole=sessionStorage.getItem('hunar_signup_role')||'';
