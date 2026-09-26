@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>HUNAR — Signing in…</title></head>
+<body>
+<script>
+(function () {
+  var base = '/hunarii/';
+  var hash = window.location.hash || '';
+  var search = window.location.search || '';
+  var callbackHash = '#auth-callback';
+
+  // Preserve Supabase OAuth tokens/code when GitHub Pages receives /auth-callback.
+  if (hash && hash !== '#auth-callback') {
+    callbackHash += hash;
+  } else if (search) {
+    callbackHash += search;
+  }
+
+  window.location.replace(base + callbackHash);
+})();
+</script>
+<noscript><a href="/hunarii/">Go to HUNAR</a></noscript>
+</body>
+</html>
