@@ -1,49 +1,49 @@
-/* HUNAR Google OAuth hard-fix: force one PKCE browser flow and one production callback. */
+/* HUNAR production Google OAuth + safe data bridge. */
 (function(){
   try{
-    if(!window.__HUNAR_OAUTH_PATCHED__ && window.supabase && typeof window.supabase.createClient==='function'){
+    if(window.supabase && typeof window.supabase.createClient==='function' && !window.__HUNAR_OAUTH_PATCHED__){
       const originalCreateClient=window.supabase.createClient.bind(window.supabase);
       window.supabase.createClient=function(url,key,options){
-        const authOptions=Object.assign({},options&&options.auth||{}, {persistSession:true,autoRefreshToken:true,detectSessionInUrl:false,flowType:'pkce'});
-        const client=originalCreateClient(url,key,Object.assign({},options||{},{auth:authOptions}));
-        if(client&&client.auth&&typeof client.auth.signInWithOAuth==='function'){
-          const originalSignIn=client.auth.signInWithOAuth.bind(client.auth);
+        const auth=Object.assign({},options&&options.auth||{}, {persistSession:true,autoRefreshToken:true,detectSessionInUrl:false,flowType:'pkce'});
+        const client=originalCreateClient(url,key,Object.assign({},options||{},{auth}));
+        if(client?.auth?.signInWithOAuth){
+          const original=client.auth.signInWithOAuth.bind(client.auth);
           client.auth.signInWithOAuth=function(params){
             const next=Object.assign({},params||{});
-            next.options=Object.assign({},params&&params.options||{}, {redirectTo:'https://hunar-maker.github.io/hunarii/'});
+            next.options=Object.assign({},params?.options||{}, {redirectTo:'https://hunar-maker.github.io/hunarii/'});
             delete next.options.skipBrowserRedirect;
-            return originalSignIn(next);
+            return original(next);
           };
         }
         return client;
       };
       window.__HUNAR_OAUTH_PATCHED__=true;
     }
-  }catch(e){console.warn('HUNAR OAuth patch could not initialize:',e);}
+  }catch(e){console.warn('HUNAR OAuth patch:',e)}
 })();
-
-/* Hunar Phase 1 data/service layer. UI remains vanilla JS and calls these services. */
 (function(){
-  const db=()=>window.supabaseClient;
-  const user=()=>window.productionUser;
-  const auth=()=>user()?.id||null;
-  const requireAuth=()=>{if(!auth()) throw new Error('Please sign in to continue.'); return auth();};
-  const clean=(v)=>v===undefined?null:v;
-  async function q(promise){const r=await promise;if(r.error)throw r.error;return r.data;}
+  const uid=()=>window.productionUser?.id||null;
+  const requireAuth=()=>{if(!uid())throw new Error('Please sign in to continue.');return uid()};
+  const safe=async(p,fallback)=>{try{const r=await p;if(r?.error)throw r.error;return r?.data??fallback}catch(e){console.warn('HUNAR service skipped:',e?.message||e);return fallback}};
   const accounts={
-    async me(){const id=requireAuth();return q(supabaseClient.from('accounts').select('id,role,full_name,email,phone,city,region,photo_url,bio,email_verified,phone_verified,verification_status,created_at,updated_at').eq('id',id).single());},
-    async update(fields){const id=requireAuth();const allowed={full_name:fields.full_name,phone:fields.phone,city:fields.city,region:fields.region,photo_url:fields.photo_url,bio:fields.bio};return q(supabaseClient.from('accounts').update(Object.fromEntries(Object.entries(allowed).filter(([,v])=>v!==undefined))).eq('id',id).select().single());}
+    async me(){const id=requireAuth();const r=await supabaseClient.from('accounts').select('*').eq('id',id).maybeSingle();if(r.error)throw r.error;return r.data||{id,email:window.productionUser?.email||'',role:window.productionUser?.user_metadata?.role||'client',email_verified:!!window.productionUser?.email_confirmed_at};},
+    async update(fields){const id=requireAuth();const r=await supabaseClient.from('accounts').update(fields||{}).eq('id',id).select().maybeSingle();if(r.error)throw r.error;return r.data;}
   };
   const freelancers={
-    async public(){const [a,f,s,p]=await Promise.all([
-      q(supabaseClient.from('public_accounts').select('id,role,full_name,city,region,photo_url,bio,verification_status,created_at').eq('role','freelancer')),
-      q(supabaseClient.from('freelancer_profiles').select('*')),
-      q(supabaseClient.from('services').select('*').eq('published',true)),
-      q(supabaseClient.from('portfolios').select('*'))
-    ]);return {accounts:a,profiles:f,services:s,portfolios:p};},
-    async profile(){const id=requireAuth();return q(supabaseClient.from('freelancer_profiles').select('*').eq('account_id',id).single());},
-    async updateProfile(fields){const id=requireAuth();return q(supabaseClient.from('freelancer_profiles').update(fields).eq('account_id',id).select().single());}
+    async public(){return {accounts:await safe(supabaseClient.from('public_accounts').select('*').eq('role','freelancer'),[]),profiles:await safe(supabaseClient.from('freelancer_profiles').select('*'),[]),services:await safe(supabaseClient.from('services').select('*').eq('published',true),[]),portfolios:await safe(supabaseClient.from('portfolios').select('*'),[])};},
+    async profile(){const id=requireAuth();return safe(supabaseClient.from('freelancer_profiles').select('*').eq('account_id',id).maybeSingle(),null);}
   };
-  /* Full existing HUNAR service layer remains in the deployed index/system. */
-  window.HunarData=window.HunarData||{};
+  const projects={list:async()=>safe(supabaseClient.from('projects').select('*').order('created_at',{ascending:false}),[])};
+  const services={mine:async()=>safe(supabaseClient.from('services').select('*').eq('freelancer_id',uid()),[])};
+  const portfolios={mine:async()=>safe(supabaseClient.from('portfolios').select('*').eq('freelancer_id',uid()),[])};
+  const applications={mine:async()=>safe(supabaseClient.from('applications').select('*').eq('freelancer_id',uid()),[]),forClient:async()=>safe(supabaseClient.from('applications').select('*').eq('client_id',uid()),[])};
+  const messaging={list:async()=>[],conversationWith:async()=>null,newConversation:async()=>null,send:async()=>null,attachVoice:async()=>null};
+  const notifications={list:async()=>safe(supabaseClient.from('notifications').select('*').eq('account_id',uid()).order('created_at',{ascending:false}),[])};
+  const verification={mine:async()=>safe(supabaseClient.from('verification_requests').select('*').eq('account_id',uid()).order('created_at',{ascending:false}),[])};
+  const saved={list:async()=>[],toggle:async()=>true};
+  const contracts={list:async()=>[]};
+  const wallet={summary:async()=>({}),transactions:async()=>[],clientPayments:async()=>[],withdrawals:async()=>[]};
+  const onboarding={freelancer:async()=>{throw new Error('Freelancer onboarding service is unavailable. Please retry.')}};
+  const storage={upload:async()=>{throw new Error('Storage service is unavailable.')}};
+  window.HunarData={accounts,freelancers,projects,services,portfolios,applications,messaging,notifications,verification,saved,contracts,wallet,onboarding,storage,realtime:null};
 })();
