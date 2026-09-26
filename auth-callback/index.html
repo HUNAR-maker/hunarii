@@ -1,29 +1,18 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>HUNAR — Signing in…</title></head>
+<head><meta charset="utf-8"><meta name="robots" content="noindex"><title>HUNAR — Signing in…</title></head>
 <body>
 <script>
 (function () {
   var base = '/hunarii/';
-  var hash = window.location.hash || '';
-  var search = window.location.search || '';
-
-  // Supabase returns OAuth tokens in the URL fragment, e.g. #access_token=...
-  // Do NOT prepend another hash. The previous callback produced
-  // #auth-callback#access_token=..., which broke the HUNAR callback parser.
-  if (hash.indexOf('#access_token=') === 0 || hash.indexOf('#code=') === 0 || hash.indexOf('#error=') === 0) {
-    window.location.replace(base + hash);
-    return;
-  }
-
-  if (search) {
-    window.location.replace(base + search);
-    return;
-  }
-
-  window.location.replace(base);
+  // Preserve the OAuth callback exactly. Do not manufacture a second '#'
+  // and do not discard ?code= or ?state=, because Supabase PKCE needs them.
+  var target = base;
+  if (window.location.search) target += window.location.search;
+  if (window.location.hash) target += window.location.hash;
+  window.location.replace(target);
 })();
 </script>
-<noscript><a href="/hunarii/">Go to HUNAR</a></noscript>
+<noscript><a href="/hunarii/">Continue to HUNAR</a></noscript>
 </body>
 </html>
