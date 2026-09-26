@@ -1,22 +1,27 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><title>HUNAR — Signing in…</title></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>HUNAR — Signing in…</title></head>
 <body>
 <script>
 (function () {
   var base = '/hunarii/';
   var hash = window.location.hash || '';
   var search = window.location.search || '';
-  var callbackHash = '#auth-callback';
 
-  // Preserve Supabase OAuth tokens/code when GitHub Pages receives /auth-callback.
-  if (hash && hash !== '#auth-callback') {
-    callbackHash += hash;
-  } else if (search) {
-    callbackHash += search;
+  // Supabase returns OAuth tokens in the URL fragment, e.g. #access_token=...
+  // Do NOT prepend another hash. The previous callback produced
+  // #auth-callback#access_token=..., which broke the HUNAR callback parser.
+  if (hash.indexOf('#access_token=') === 0 || hash.indexOf('#code=') === 0 || hash.indexOf('#error=') === 0) {
+    window.location.replace(base + hash);
+    return;
   }
 
-  window.location.replace(base + callbackHash);
+  if (search) {
+    window.location.replace(base + search);
+    return;
+  }
+
+  window.location.replace(base);
 })();
 </script>
 <noscript><a href="/hunarii/">Go to HUNAR</a></noscript>
