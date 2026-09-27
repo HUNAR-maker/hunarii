@@ -1,4 +1,4 @@
-# Deploy the exact HUNAR ZIP version to GitHub Pages
+# Deploy the actual HUNAR application from the V54 package
 name: Deploy HUNAR ZIP to Pages
 
 on:
@@ -25,26 +25,41 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Prepare HUNAR ZIP
+      - name: Prepare the actual HUNAR application
+        shell: bash
         run: |
+          set -euo pipefail
           rm -rf _site _unzipped
           mkdir -p _site _unzipped
           unzip -q HUNAR-V54-GITHUB-PAGES-READY.zip -d _unzipped
 
-          INDEX=$(find _unzipped -type f -iname 'index.html' | head -n 1)
+          echo 'Index files found in the package:'
+          find _unzipped -type f -iname 'index.html' -printf '%s %p\n' | sort -nr
+
+          # The package can contain more than one index.html. The real HUNAR
+          # application is the largest index file; do not deploy a tiny loader
+          # or an older nested copy by accident.
+          INDEX=$(find _unzipped -type f -iname 'index.html' -printf '%s %p\n' | sort -nr | head -n 1 | cut -d' ' -f2-)
           if [ -z "$INDEX" ]; then
             echo 'HUNAR ZIP does not contain index.html' >&2
             exit 1
           fi
 
+          INDEX_SIZE=$(wc -c < "$INDEX")
+          if [ "$INDEX_SIZE" -lt 1000 ]; then
+            echo "Selected index.html is unexpectedly small ($INDEX_SIZE bytes). Refusing to deploy the wrong version." >&2
+            exit 1
+          fi
+
           ROOT=$(dirname "$INDEX")
+          echo "Using HUNAR application root: $ROOT"
           cp -a "$ROOT"/. _site/
 
-          # Ensure every asset next to the actual app root is deployed.
+          # Static GitHub Pages deployment; prevent Jekyll from rewriting assets.
           touch _site/.nojekyll
 
-          echo 'Deployed HUNAR root:'
-          find _site -maxdepth 2 -type f | sort | head -100
+          echo 'Final deployed root:'
+          find _site -maxdepth 2 -type f -printf '%s %p\n' | sort -nr | head -100
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
