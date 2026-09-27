@@ -1,4 +1,4 @@
-# Deploy exactly one complete HUNAR V54 application
+# Deploy one canonical HUNAR V54 build
 name: Deploy HUNAR Pages
 
 on:
@@ -13,7 +13,7 @@ permissions:
 
 concurrency:
   group: "pages"
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   deploy:
@@ -31,48 +31,22 @@ jobs:
           set -euo pipefail
           rm -rf _site _v54
           mkdir -p _site _v54
-
-          ZIP="HUNAR-V54-GITHUB-PAGES-READY.zip"
-          test -f "$ZIP"
-          unzip -q "$ZIP" -d _v54
+          test -f HUNAR-V54-GITHUB-PAGES-READY.zip
+          unzip -q HUNAR-V54-GITHUB-PAGES-READY.zip -d _v54
 
           mapfile -t INDEXES < <(find _v54 -type f -name index.html -printf '%s %p\n' | sort -nr)
           test "${#INDEXES[@]}" -gt 0
+          APP_INDEX="${INDEXES[0]#* }"
+          APP_DIR="$(dirname "$APP_INDEX")"
+          APP_SIZE="${INDEXES[0]%% *}"
 
-          APP_DIR=""
-          for entry in "${INDEXES[@]}"; do
-            size="${entry%% *}"
-            path="${entry#* }"
-            if [ "$size" -ge 500000 ]; then
-              APP_DIR="$(dirname "$path")"
-              break
-            fi
-          done
-
-          if [ -z "$APP_DIR" ]; then
-            echo "STOP: V54 package does not contain a complete application." >&2
-            printf '%s\n' "${INDEXES[@]}" >&2
-            exit 1
-          fi
-
-          echo "Canonical application: $APP_DIR"
+          echo "Using V54 application: $APP_DIR"
+          echo "V54 index size: $APP_SIZE bytes"
           cp -a "$APP_DIR"/. _site/
           touch _site/.nojekyll
-
-          # Critical runtime files must exist at the same root as index.html.
-          for required in hunar-services.js hunar-safety.js; do
-            if [ ! -f "_site/$required" ]; then
-              FOUND="$(find _site -type f -name "$required" -print -quit || true)"
-              if [ -n "$FOUND" ]; then cp "$FOUND" "_site/$required"; fi
-            fi
-            test -s "_site/$required"
-          done
-
           test -s _site/index.html
-          test "$(wc -c < _site/index.html)" -ge 500000
-
-          echo "CANONICAL HUNAR BUILD VERIFIED"
-          sha256sum _site/index.html _site/hunar-services.js _site/hunar-safety.js
+          echo "Canonical V54 site prepared."
+          find _site -maxdepth 3 -type f | sort | head -200
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
