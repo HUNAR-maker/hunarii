@@ -24,29 +24,36 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Prepare HUNAR ZIP
         run: |
           rm -rf _site _unzipped
-          mkdir -p _site
+          mkdir -p _site _unzipped
           unzip -q HUNAR-V54-GITHUB-PAGES-READY.zip -d _unzipped
-          if [ -f _unzipped/index.html ]; then
-            cp -a _unzipped/. _site/
-          else
-            ROOT=$(find _unzipped -mindepth 1 -maxdepth 1 -type d | head -n 1)
-            if [ -n "$ROOT" ] && [ -f "$ROOT/index.html" ]; then
-              cp -a "$ROOT"/. _site/
-            else
-              echo 'HUNAR ZIP does not contain index.html' >&2
-              exit 1
-            fi
+
+          INDEX=$(find _unzipped -type f -iname 'index.html' | head -n 1)
+          if [ -z "$INDEX" ]; then
+            echo 'HUNAR ZIP does not contain index.html' >&2
+            exit 1
           fi
+
+          ROOT=$(dirname "$INDEX")
+          cp -a "$ROOT"/. _site/
+
+          # Ensure every asset next to the actual app root is deployed.
           touch _site/.nojekyll
+
+          echo 'Deployed HUNAR root:'
+          find _site -maxdepth 2 -type f | sort | head -100
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
+
       - name: Upload HUNAR site
         uses: actions/upload-pages-artifact@v4
         with:
           path: '_site'
-      - name: Deploy to GitHub Pages
+
+      - name: Deploy HUNAR site
         id: deployment
         uses: actions/deploy-pages@v4
