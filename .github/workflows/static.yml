@@ -1,4 +1,4 @@
-# Deploy the complete HUNAR application from the provided V54 package
+# Deploy the current HUNAR application from the repository root
 name: Deploy HUNAR Pages
 
 on:
@@ -25,41 +25,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Prepare the complete HUNAR application
+      - name: Prepare the current HUNAR build
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf _site _hunar_extract
-          mkdir -p _site _hunar_extract
-          test -f HUNAR-V54-GITHUB-PAGES-READY.zip
-          unzip -q HUNAR-V54-GITHUB-PAGES-READY.zip -d _hunar_extract
-          INDEX_INFO=$(find _hunar_extract -type f -name index.html -printf '%s %p\n' | sort -nr | head -1)
-          test -n "$INDEX_INFO"
-          INDEX_SIZE=${INDEX_INFO%% *}
-          INDEX_PATH=${INDEX_INFO#* }
-          echo "Selected HUNAR index: $INDEX_PATH ($INDEX_SIZE bytes)"
+          rm -rf _site
+          mkdir -p _site
+          test -f index.html
+          INDEX_SIZE=$(wc -c < index.html)
+          echo "Deploying root HUNAR index: ${INDEX_SIZE} bytes"
           if [ "$INDEX_SIZE" -lt 500000 ]; then
             echo "Refusing to deploy an incomplete HUNAR index." >&2
             exit 1
           fi
-          APP_ROOT=$(dirname "$INDEX_PATH")
-          cp -a "$APP_ROOT"/. _site/
-          python3 - <<'PY'
-          from pathlib import Path
-          p=Path('_site/index.html')
-          s=p.read_text(encoding='utf-8')
-          old='''    const params=new URLSearchParams(location.search);\n    // Supabase can return OAuth tokens in the URL when the provider uses\n    // the implicit flow. Handle both query-string tokens and PKCE code flow.\n    const accessToken=params.get('access_token');\n    const refreshToken=params.get('refresh_token');'''
-          new='''    const queryParams=new URLSearchParams(location.search);\n    const hashText=String(location.hash||'').replace(/^#/,'');\n    const hashParams=new URLSearchParams(hashText.includes('?')?hashText.split('?')[1]:hashText);\n    // Supabase may return OAuth tokens in the URL fragment (#access_token=...)\n    // or a PKCE code in the query string (?code=...). Read both forms.\n    const params=new URLSearchParams(queryParams);\n    for(const [k,v] of hashParams.entries()) if(!params.has(k)) params.set(k,v);\n    const accessToken=params.get('access_token');\n    const refreshToken=params.get('refresh_token');'''
-          if old in s:
-              s=s.replace(old,new,1)
-          elif 'const accessToken=params.get(\'access_token\');' in s and 'hashParams' not in s:
-              s=s.replace('const params=new URLSearchParams(location.search);', "const queryParams=new URLSearchParams(location.search);\n    const hashText=String(location.hash||'').replace(/^#/,'');\n    const hashParams=new URLSearchParams(hashText.includes('?')?hashText.split('?')[1]:hashText);\n    const params=new URLSearchParams(queryParams);\n    for(const [k,v] of hashParams.entries()) if(!params.has(k)) params.set(k,v);",1)
-          p.write_text(s,encoding='utf-8')
-          PY
-          test -f _site/index.html
-          test "$(wc -c < _site/index.html)" -ge 500000
+          cp -a index.html _site/
+          # Deploy every current repository asset/file needed by the root build.
+          for item in assets css js img images fonts favicon.ico hunar-services.js hunar-safety.js; do
+            if [ -e "$item" ]; then cp -a "$item" _site/; fi
+          done
           touch _site/.nojekyll
-          find _site -maxdepth 2 -type f -printf '%s %p\n' | sort -nr | head -40
+          echo "Final deployed files:"
+          find _site -maxdepth 3 -type f -printf '%s %p\n' | sort -nr | head -60
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
