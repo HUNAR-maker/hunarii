@@ -1,5 +1,5 @@
-# Deploy the actual HUNAR application from the V54 package
-name: Deploy HUNAR ZIP to Pages
+# Deploy the restored HUNAR application directly from the repository
+name: Deploy HUNAR Pages
 
 on:
   push:
@@ -25,41 +25,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Prepare the actual HUNAR application
+      - name: Prepare the restored HUNAR application
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf _site _unzipped
-          mkdir -p _site _unzipped
-          unzip -q HUNAR-V54-GITHUB-PAGES-READY.zip -d _unzipped
+          rm -rf _site
+          mkdir -p _site
 
-          echo 'Index files found in the package:'
-          find _unzipped -type f -iname 'index.html' -printf '%s %p\n' | sort -nr
-
-          # The package can contain more than one index.html. The real HUNAR
-          # application is the largest index file; do not deploy a tiny loader
-          # or an older nested copy by accident.
-          INDEX=$(find _unzipped -type f -iname 'index.html' -printf '%s %p\n' | sort -nr | head -n 1 | cut -d' ' -f2-)
-          if [ -z "$INDEX" ]; then
-            echo 'HUNAR ZIP does not contain index.html' >&2
+          # The restored new HUNAR application is already the repository root
+          # index.html. Do NOT extract or select an index from the old V54 ZIP.
+          test -f index.html
+          SIZE=$(wc -c < index.html)
+          echo "Repository index.html size: $SIZE bytes"
+          if [ "$SIZE" -lt 500000 ]; then
+            echo "Refusing to deploy: the restored HUNAR index is unexpectedly small." >&2
             exit 1
           fi
 
-          INDEX_SIZE=$(wc -c < "$INDEX")
-          if [ "$INDEX_SIZE" -lt 1000 ]; then
-            echo "Selected index.html is unexpectedly small ($INDEX_SIZE bytes). Refusing to deploy the wrong version." >&2
-            exit 1
-          fi
-
-          ROOT=$(dirname "$INDEX")
-          echo "Using HUNAR application root: $ROOT"
-          cp -a "$ROOT"/. _site/
-
-          # Static GitHub Pages deployment; prevent Jekyll from rewriting assets.
+          cp index.html _site/index.html
+          if [ -f 404.html ]; then cp 404.html _site/404.html; fi
           touch _site/.nojekyll
 
           echo 'Final deployed root:'
-          find _site -maxdepth 2 -type f -printf '%s %p\n' | sort -nr | head -100
+          find _site -maxdepth 1 -type f -printf '%s %p\n' | sort -nr
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
