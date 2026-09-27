@@ -1,4 +1,4 @@
-# Deploy the current HUNAR application from the repository root
+# Deploy the complete HUNAR V54 application
 name: Deploy HUNAR Pages
 
 on:
@@ -25,27 +25,54 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Prepare the current HUNAR build
+      - name: Build the Pages site from the V54 package
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf _site
-          mkdir -p _site
-          test -f index.html
-          INDEX_SIZE=$(wc -c < index.html)
-          echo "Deploying root HUNAR index: ${INDEX_SIZE} bytes"
-          if [ "$INDEX_SIZE" -lt 500000 ]; then
-            echo "Refusing to deploy an incomplete HUNAR index." >&2
+          rm -rf _site _v54
+          mkdir -p _site _v54
+          test -f HUNAR-V54-GITHUB-PAGES-READY.zip
+          unzip -q HUNAR-V54-GITHUB-PAGES-READY.zip -d _v54
+
+          # Find the complete application root. Do not use the 217-byte repository marker.
+          mapfile -t INDEXES < <(find _v54 -type f -name index.html -printf '%s %p\n' | sort -nr)
+          test "${#INDEXES[@]}" -gt 0
+          APP_INDEX=""
+          APP_DIR=""
+          for entry in "${INDEXES[@]}"; do
+            size="${entry%% *}"
+            path="${entry#* }"
+            if [ "$size" -ge 500000 ]; then
+              APP_INDEX="$path"
+              APP_DIR="$(dirname "$path")"
+              break
+            fi
+          done
+          if [ -z "$APP_INDEX" ]; then
+            echo "No complete HUNAR V54 index.html found in package." >&2
+            printf '%s\n' "${INDEXES[@]}" >&2
             exit 1
           fi
-          cp -a index.html _site/
-          # Deploy every current repository asset/file needed by the root build.
-          for item in assets css js img images fonts favicon.ico hunar-services.js hunar-safety.js; do
-            if [ -e "$item" ]; then cp -a "$item" _site/; fi
-          done
+
+          echo "Deploying application root: $APP_DIR"
+          echo "Application index size: $(wc -c < "$APP_INDEX") bytes"
+          cp -a "$APP_DIR"/. _site/
           touch _site/.nojekyll
-          echo "Final deployed files:"
-          find _site -maxdepth 3 -type f -printf '%s %p\n' | sort -nr | head -60
+
+          # Confirm the critical HUNAR runtime files are present in the deployed tree.
+          test -f _site/index.html
+          test "$(wc -c < _site/index.html)" -ge 500000
+          if [ ! -f _site/hunar-services.js ]; then
+            FOUND_SERVICE="$(find _site -type f -name hunar-services.js -print -quit || true)"
+            if [ -n "$FOUND_SERVICE" ]; then cp "$FOUND_SERVICE" _site/hunar-services.js; fi
+          fi
+          if [ ! -f _site/hunar-safety.js ]; then
+            FOUND_SAFETY="$(find _site -type f -name hunar-safety.js -print -quit || true)"
+            if [ -n "$FOUND_SAFETY" ]; then cp "$FOUND_SAFETY" _site/hunar-safety.js; fi
+          fi
+
+          echo "Deployed critical files:"
+          find _site -maxdepth 4 -type f \( -name 'index.html' -o -name 'hunar-services.js' -o -name 'hunar-safety.js' \) -printf '%s %p\n' | sort -nr
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
