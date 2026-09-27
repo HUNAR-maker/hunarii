@@ -1,4 +1,4 @@
-# Deploy the complete HUNAR V54 application
+# Deploy exactly one complete HUNAR V54 application
 name: Deploy HUNAR Pages
 
 on:
@@ -25,61 +25,61 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build the Pages site from the V54 package
+      - name: Build one canonical HUNAR V54 site
         shell: bash
         run: |
           set -euo pipefail
           rm -rf _site _v54
           mkdir -p _site _v54
-          test -f HUNAR-V54-GITHUB-PAGES-READY.zip
-          unzip -q HUNAR-V54-GITHUB-PAGES-READY.zip -d _v54
 
-          # Find the complete application root. Do not use the 217-byte repository marker.
+          ZIP="HUNAR-V54-GITHUB-PAGES-READY.zip"
+          test -f "$ZIP"
+          unzip -q "$ZIP" -d _v54
+
           mapfile -t INDEXES < <(find _v54 -type f -name index.html -printf '%s %p\n' | sort -nr)
           test "${#INDEXES[@]}" -gt 0
-          APP_INDEX=""
+
           APP_DIR=""
           for entry in "${INDEXES[@]}"; do
             size="${entry%% *}"
             path="${entry#* }"
             if [ "$size" -ge 500000 ]; then
-              APP_INDEX="$path"
               APP_DIR="$(dirname "$path")"
               break
             fi
           done
-          if [ -z "$APP_INDEX" ]; then
-            echo "No complete HUNAR V54 index.html found in package." >&2
+
+          if [ -z "$APP_DIR" ]; then
+            echo "STOP: V54 package does not contain a complete application." >&2
             printf '%s\n' "${INDEXES[@]}" >&2
             exit 1
           fi
 
-          echo "Deploying application root: $APP_DIR"
-          echo "Application index size: $(wc -c < "$APP_INDEX") bytes"
+          echo "Canonical application: $APP_DIR"
           cp -a "$APP_DIR"/. _site/
           touch _site/.nojekyll
 
-          # Confirm the critical HUNAR runtime files are present in the deployed tree.
-          test -f _site/index.html
-          test "$(wc -c < _site/index.html)" -ge 500000
-          if [ ! -f _site/hunar-services.js ]; then
-            FOUND_SERVICE="$(find _site -type f -name hunar-services.js -print -quit || true)"
-            if [ -n "$FOUND_SERVICE" ]; then cp "$FOUND_SERVICE" _site/hunar-services.js; fi
-          fi
-          if [ ! -f _site/hunar-safety.js ]; then
-            FOUND_SAFETY="$(find _site -type f -name hunar-safety.js -print -quit || true)"
-            if [ -n "$FOUND_SAFETY" ]; then cp "$FOUND_SAFETY" _site/hunar-safety.js; fi
-          fi
+          # Critical runtime files must exist at the same root as index.html.
+          for required in hunar-services.js hunar-safety.js; do
+            if [ ! -f "_site/$required" ]; then
+              FOUND="$(find _site -type f -name "$required" -print -quit || true)"
+              if [ -n "$FOUND" ]; then cp "$FOUND" "_site/$required"; fi
+            fi
+            test -s "_site/$required"
+          done
 
-          echo "Deployed critical files:"
-          find _site -maxdepth 4 -type f \( -name 'index.html' -o -name 'hunar-services.js' -o -name 'hunar-safety.js' \) -printf '%s %p\n' | sort -nr
+          test -s _site/index.html
+          test "$(wc -c < _site/index.html)" -ge 500000
+
+          echo "CANONICAL HUNAR BUILD VERIFIED"
+          sha256sum _site/index.html _site/hunar-services.js _site/hunar-safety.js
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
-      - name: Upload HUNAR site
+      - name: Upload canonical HUNAR site
         uses: actions/upload-pages-artifact@v4
         with:
           path: '_site'
-      - name: Deploy HUNAR site
+      - name: Deploy canonical HUNAR site
         id: deployment
         uses: actions/deploy-pages@v4
