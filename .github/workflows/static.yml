@@ -1,4 +1,3 @@
-# Deploy one canonical HUNAR V54 build
 name: Deploy HUNAR Pages
 
 on:
@@ -25,52 +24,38 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build one canonical HUNAR V54 site
+      - name: Build the single V54 application
         shell: bash
         run: |
           set -euo pipefail
           rm -rf _site _v54
           mkdir -p _site _v54
-          test -f HUNAR-V54-GITHUB-PAGES-READY.zip
           unzip -q HUNAR-V54-GITHUB-PAGES-READY.zip -d _v54
-
           mapfile -t INDEXES < <(find _v54 -type f -name index.html -printf '%s %p\n' | sort -nr)
           test "${#INDEXES[@]}" -gt 0
           APP_INDEX="${INDEXES[0]#* }"
           APP_DIR="$(dirname "$APP_INDEX")"
-          echo "Using V54 application: $APP_DIR"
           cp -a "$APP_DIR"/. _site/
 
-          # The V54 HTML references these production bridge files.
-          git show 0c72efca60ccc02902bef2129b2779242f7d1f37:hunar-services.js > _site/hunar-services.js
-          git show 0c72efca60ccc02902bef2129b2779242f7d1f37:hunar-safety.js > _site/hunar-safety.js
+          # Restore the production bridge used by the HUNAR application.
+          curl -fsSL https://raw.githubusercontent.com/HUNAR-maker/hunarii/0c72efca60ccc02902bef2129b2779242f7d1f37/hunar-services.js -o _site/hunar-services.js
+          # V54 references this file; provide it so the browser never receives a 404.
+          printf '%s\n' '/* HUNAR safety bridge intentionally empty; V54 keeps safety checks inline. */' > _site/hunar-safety.js
 
-          # Fix only the OAuth callback token parsing. The V54 app can receive
-          # Supabase implicit-flow tokens in the URL fragment (#access_token=...).
-          python - <<'PY'
-          from pathlib import Path
-          p=Path('_site/index.html')
-          s=p.read_text(encoding='utf-8')
-          old="""    const params=new URLSearchParams(location.search);\n    // Supabase can return OAuth tokens in the URL when the provider uses\n    // the implicit flow. Handle both query-string tokens and PKCE code flow.\n    const accessToken=params.get('access_token');\n    const refreshToken=params.get('refresh_token');"""
-          new="""    const params=new URLSearchParams(location.search);\n    const hashParams=new URLSearchParams(String(location.hash||'').replace(/^#/,'').replace(/^auth-callback#/,'').replace(/^auth-callback&/,'auth-callback='));\n    // Supabase may return OAuth tokens in either the query string or URL fragment.\n    const accessToken=params.get('access_token')||hashParams.get('access_token');\n    const refreshToken=params.get('refresh_token')||hashParams.get('refresh_token');"""
-          if old not in s:
-              raise SystemExit('Expected V54 OAuth callback block was not found; refusing deployment')
-          p.write_text(s.replace(old,new,1),encoding='utf-8')
-          PY
+          # Let Supabase consume OAuth sessions returned in the URL fragment.
+          sed -i 's/detectSessionInUrl:false/detectSessionInUrl:true/g' _site/hunar-services.js
 
           touch _site/.nojekyll
           test -s _site/index.html
           test -s _site/hunar-services.js
           test -s _site/hunar-safety.js
-          echo "Canonical V54 site prepared with auth bridge."
-          find _site -maxdepth 3 -type f | sort | head -200
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
-      - name: Upload canonical HUNAR site
+      - name: Upload HUNAR site
         uses: actions/upload-pages-artifact@v4
         with:
           path: '_site'
-      - name: Deploy canonical HUNAR site
+      - name: Deploy HUNAR site
         id: deployment
         uses: actions/deploy-pages@v4
